@@ -1,23 +1,23 @@
 import pandas as pd
 import requests
-from bs4 import BeautifulSoup
-# from time import sleep
-# from random import randint
-import re
 import sys
+from bs4 import BeautifulSoup
+from time import sleep
+from random import randint
+import re
+import pickle
 
-# agent = {"User-Agent":'Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36'}
 agent = {'user-agent' : 'my-app/0.0.1'}
 
 base = "https://schools.org.in"
 page = requests.get(base, headers=agent)
-parser = BeautifulSoup(page.content, "lxml")
+parser = BeautifulSoup(page.content, "html.parser")
 
 content = parser.select(".card-columns a")
 
 def get_data(extn) :
     data = requests.get(base+"/"+extn, headers=agent)
-    parser = BeautifulSoup(data.content)
+    parser = BeautifulSoup(data.content, "html.parser")
     lists = parser.select(".table-striped td a")
     new_extn = []
     for i in range(len(lists)) :    
@@ -26,7 +26,7 @@ def get_data(extn) :
 
 def get_schooldata(extn) :
     data = requests.get(base+"/"+extn, headers=agent)
-    parser = BeautifulSoup(data.content)
+    parser = BeautifulSoup(data.content, "html.parser")
     lists = parser.select(".list-group-item")
     name = parser.select(".my-3 h2")
     all_fields = [name[0].text]
@@ -48,42 +48,55 @@ def get_new_df() :
 all_states = ['dadra-and-nagar-haveli', 'bihar', 'haryana', 'rajasthan', 'mizoram', 'jammu-and-kashmir', 'maharashtra',
  'chandigarh', 'kerala', 'telangana', 'chhattisgarh', 'tamil-nadu', 'arunachal-pradesh', 'uttar-pradesh', 'sikkim',
  'punjab', 'andhra-pradesh', 'delhi', 'assam', 'orissa', 'puducherry', 'manipur', 'andaman-and-nicobar-islands', 'gujrat',
- 'nagaland', 'meghalaya', 'jharkhand']
+ 'nagaland', 'meghalaya', 'jharkhand', 'goa']
 
 def scrape_data(n) :
-    state = all_states[n]
-    statewise_schools = {}
-    # district_wise_schools = {}
-    # for state in states[0]:
-    #     state = content[i].get('href')
-    districts = get_data(state)
-    for district in districts:
-        blocks = get_data(district)
-        for block in blocks:
-            clusters = get_data(block)
-            for cluster in clusters:
-                schools = get_data(cluster)
-    #     district_wise_schools[districts[0]] = schools
-    statewise_schools[state] = schools
+    try :
+        state = all_states[n]
+        districts = get_data(state)
+        district_wise_schools = []
+        
+        for district in districts:
+            blocks = get_data(district)
+            sleep(randint(300, 400))
+            for block in blocks:
+                clusters = get_data(block)
+                print("In block - " + block)
+                sleep(randint(60, 120))
+                for cluster in clusters:
+                    schools = get_data(cluster)
+                    district_wise_schools.append(schools)
+                    print("In cluster - " + cluster)
+                    sleep(randint(30,90))
+            print("\nPaused!........................\n")
+        
+        file = open('pickle_dump/' + state + "_school_list.pkl","wb")
+        pickle.dump(district_wise_schools, file)
+        file.close()
 
-    for state in statewise_schools.keys() :
         df = get_new_df()
-        for schools in statewise_schools[state] :
-            school_data = get_schooldata(schools)
+        for all_schools in district_wise_schools:
+            sleep(randint(120,180))
+            for school in all_schools :
+                school_data = get_schooldata(school)
+                pattern = re.compile('([^:]+)')
+                values = []
+                values.append(school_data[0])
+                for i in school_data[1:] :
+                    try :
+                        values.append(re.findall(pattern, i)[1])
+                    except :
+                        values.append(re.findall(pattern, i)[0])
 
-            pattern = re.compile('([^:]+)')
-            values = []
-            values.append(school_data[0])
-            for i in school_data[1:] :
-                try :
-                    values.append(re.findall(pattern, i)[1])
-                except :
-                    values.append(re.findall(pattern, i)[0])
-
-            school_row = pd.Series(values, index=df.columns)
-            df = df.append(school_row, ignore_index=True)
-        df.to_csv(state + '_school_data.csv')
+                school_row = pd.Series(values, index=df.columns)
+                df = df.append(school_row, ignore_index=True)
+                print('Writing school data - ' + school_data[0])
+                sleep(10)
+        df.to_csv('data/' + state + '_school_data.csv')
+    except :
+        print("\nAn error occured!\tFAILED!")
         
 n = sys.argv[1:]
 n = int(n[0])
 scrape_data(n)
+
